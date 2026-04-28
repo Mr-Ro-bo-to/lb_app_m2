@@ -21,7 +21,9 @@ streamlit run streamlit_fit_m2_test.py
 
 # github
 git init
-git add .
-git commit -m "first commit"
+git add .                       # for update
+git commit -m "comment"         # for update            
 git remote add origin https://github.com/Mr-Ro-bo-to/lb_app_m2.git
-git push -u origin master
+git push -u origin master       
+
+git push                        # for update

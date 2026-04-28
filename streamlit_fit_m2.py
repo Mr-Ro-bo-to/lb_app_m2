@@ -27,70 +27,101 @@ data_info_string = ""
 
 st.write("Let's fit M² to some data! 🥳")
 
-data_source = st.radio(
-    "Select data source", 
-    options=["Upload file", "Manual input"],
-    horizontal=True,
-)
+
+@st.dialog("Info")
+def show_help():
+    
+    st.text("""Follow format shown below:  
+    - file header:  
+    1st & 2nd column (key value pairs)  
+    - column header:  
+    'Coordinate': marker for columns to start (don't change)  
+    'X' & 'Y': labels for legend  
+    'Position' & 'Waist': x and y axes labels  
+    units: units of length
+    - save output
+    use 'Save Image' button 
+    use 'Save as Excel' button at bottom to save data or get template
+    """)
+    sub_col1, sub_col2, sub_col3 = st.columns([1,2,1])
+
+    with sub_col2:
+        st.image("data/Screenshot_excel_data_template.png", width=400)
+
+
+if st.button("Info"):
+    show_help()
+
+# st.markdown("---") # just a horizontal line
+
+# data_source = st.radio(
+#     "Select data source", 
+#     options=["Upload file", "Manual input"],
+#     horizontal=True,
+# )
 
 
 
 # load data, dispaly/edit header
-col1, spacer, col2, spacer, col3 = st.columns([2, 0.2, 1, 0.2, 2])
+col1, spacer, col2, spacer, col3 = st.columns([2, 0.2, 1.5, 0.2, 2])
 
 # input widgets
-if data_source == "Upload file":
-    with col1:
+# if data_source == "Upload file":
+with col1:
 
-        sub_col1, sub_col3 = st.columns([2, 1])
+    sub_col1, sub_col3 = st.columns([2, 1])
 
-        with sub_col1:
-            # widget for uploading data
-            uploaded_file = st.file_uploader("Select data file", 
-                type=["xlsx", '.xls'],
-                help = "Excel file",
-            )
-        uploaded_error = False
-    # if succesfull file uploade, make beam object from file
-    if uploaded_file:
+    with sub_col1:
+        # widget for uploading data
+        uploaded_file = st.file_uploader("Select data file", 
+            type=["xlsx", '.xls'],
+            help = "Excel file",
+        )
+    uploaded_error = False
+# if succesfull file uploade, make beam object from file
+if uploaded_file:
 
-        try:
-            # Problem: how to use my beam_load() function when using streamlit file uploader
-            # Solution: ChatGPT magic. Save uploaded file to a temporary file, get path of that file, hand it to beam_load
-            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
-                tmp.write(uploaded_file.read())
-                tmp_path = tmp.name
-            input_dict = lb.load_table_to_flat_dict(tmp_path)
-        
-            #ds = lb.load_table_to_dataset(tmp_path)
-            # print("uploading file")
-            uploaded_error = False
-
-        except Exception as e:
-            st.error(f"Error loading data: {e}")
-            uploaded_file = None
-            uploaded_error = True
-
-    # load example data if no file uploaded
-    if uploaded_file == None:
-        file = 'data/data_M2_example.xlsx'
-        input_dict = lb.load_table_to_flat_dict(file)
-
+    try:
+        # Problem: how to use my beam_load() function when using streamlit file uploader
+        # Solution: ChatGPT magic. Save uploaded file to a temporary file, get path of that file, hand it to beam_load
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
+            tmp.write(uploaded_file.read())
+            tmp_path = tmp.name
+        input_dict = lb.load_table_to_flat_dict(tmp_path)
     
-    if uploaded_file == None:
-        with sub_col3:
-            if uploaded_error:
-                info_text = "Error loading file - using example data"
-                st.error(info_text)
-            else:
-                info_text = "No file uploaded - using example data"
-                st.info(info_text)
+        #ds = lb.load_table_to_dataset(tmp_path)
+        # print("uploading file")
+        uploaded_error = False
+
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        uploaded_file = None
+        uploaded_error = True
+
+# load example data if no file uploaded
+if uploaded_file == None:
+    file = 'data/data_M2_example.xlsx'
+    input_dict = lb.load_table_to_flat_dict(file)
 
 
-elif data_source == "Manual input":
-        # load empty template
-        file = 'data\data_M2_empty.xlsx'
-        input_dict = lb.load_table_to_flat_dict(file)
+if uploaded_file == None:
+    with sub_col3:
+        st.write("")
+        if uploaded_error:
+            info_text = "Error loading file - using example data"
+            st.error(info_text)
+        else:
+            info_text = "No file uploaded - using example data"
+            st.info(info_text)
+
+with col1:
+    st.markdown("---") # just a horizontal line
+
+# elif data_source == "Manual input":
+#         # load empty template
+#         file = 'data/data_M2_empty.xlsx'
+#         input_dict = lb.load_table_to_flat_dict(file)
+
 
 
 
@@ -199,17 +230,17 @@ data_dict = {
 
 with col2:
 
-    if data_source == "Manual input":
-        height = 400
-    elif data_source == "Upload file":
-        height = 500
+    # if data_source == "Manual input":
+    #     height = 400
+    # elif data_source == "Upload file":
+    #     height = 500
 
-
+    st.write("View & Edit Data")
 
     data_dict = st.data_editor(
         data_dict,
         num_rows="dynamic",
-        height=height,
+        height=500,
         hide_index=True,
         column_config={
             f'{coord_dim}': st.column_config.NumberColumn(required=True, default=0),
@@ -304,7 +335,9 @@ with col3:
 
 
     with sub_col2:
-        show_overlays = st.checkbox("Show overlays", value=False)
+        show_overlays = st.checkbox(
+            "Show overlays", value=False,
+            help="Grey area indicates 'slope' and 'waist' region (>2x and <1x rayleigh  length)")
 
 
 # print ("dict: ", input_dict)
@@ -342,6 +375,30 @@ with col3:
     plt.tight_layout()
     st.pyplot(fig)
 
+    # show fit results:
+    fr = x_fit.attrs['fit_results']
+
+    
+    sub_col1, sub_col2, = st.columns([1, 1])
+    with sub_col1:
+        st.write(f"Fit Results {variable_1_name}:")
+        st.markdown(f"$w_0$ = {fr['w0']['value']:.3f} {fr['w0']['unit']}")
+        st.markdown(f"$x_0$ = {fr['x0']['value']:.3f} {fr['x0']['unit']}")
+        st.markdown(f"slope = {fr['slope']['value']:.3f} {fr['slope']['unit']}")
+        st.markdown(f"$R_L$ = {fr['rayleigh_length']['value']:.3f} {fr['rayleigh_length']['unit']}")
+        st.markdown(f"$M^2$ = {fr['m2']['value']:.3f}")
+
+    fr = y_fit.attrs['fit_results']
+
+    with sub_col2:
+        st.write(f"Fit Results {variable_1_name}:")
+        st.markdown(f"$w_0$ = {fr['w0']['value']:.3f} {fr['w0']['unit']}")
+        st.markdown(f"$x_0$ = {fr['x0']['value']:.3f} {fr['x0']['unit']}")
+        st.markdown(f"slope = {fr['slope']['value']:.3f} {fr['slope']['unit']}")
+        st.markdown(f"$R_L$ = {fr['rayleigh_length']['value']:.3f} {fr['rayleigh_length']['unit']}")
+        st.markdown(f"$M^2$ = {fr['m2']['value']:.3f}")
+
+
     sub_col1, sub_col2, = st.columns([1, 1])
 
     # Save to a buffer (in-memory file)
@@ -352,7 +409,7 @@ with col3:
     with sub_col1:
         # Trigger download via button
         st.download_button(
-            label="Download Plot as PNG",
+            label="Save Image",
             data=buf.getvalue(),
             file_name="my_plot.png",
             mime="image/png"
@@ -363,7 +420,7 @@ with col3:
      # Trigger download of Excel file
     with sub_col2:
         st.download_button(
-            label="Download Excel",
+            label="Save as Excel",
             data=lb.flat_dict_to_excel_bytes(flat_dict),
             file_name="results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
