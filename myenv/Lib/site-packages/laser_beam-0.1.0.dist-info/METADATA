@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: laser_beam
+Version: 0.1.0
+Requires-Dist: xarray
+Requires-Dist: numpy
+Requires-Dist: pint_xarray
+Requires-Dist: matplotlib
+Requires-Dist: scipy
+Requires-Dist: pandas
+Requires-Dist: openpyxl

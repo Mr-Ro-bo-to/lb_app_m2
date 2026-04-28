@@ -1,0 +1,5 @@
+streamlit
+pandas
+scipy
+matplotlib
+git+https://github.com/Mr-Ro-bo-to/laser_beam.git
