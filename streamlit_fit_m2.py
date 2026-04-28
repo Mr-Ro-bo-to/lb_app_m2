@@ -73,7 +73,7 @@ if data_source == "Upload file":
 
     # load example data if no file uploaded
     if uploaded_file == None:
-        file = 'data\data_M2_example.xlsx'
+        file = 'data/data_M2_example.xlsx'
         input_dict = lb.load_table_to_flat_dict(file)
 
     

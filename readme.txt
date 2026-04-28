@@ -1,21 +1,5 @@
-# just som ecomments
-# install or update laer_beam libarry from same computer
-pip install -e /path/to/laser_beam
-pip install -e ../../laser_beam (relativ path to laser_beam project on local machine)
+M2 beam quality fit routine
 
-pip install streamlit
+uses laser_beam toolkit
 
-# activate myenv
-myenv\Scripts\activate
-
-# run streamlit locally
-streamlit run your_script.py
-streamlit run streamlit_fit_m2.py
-streamlit run streamlit_fit_m2_test.py
-
-# github
-git init
-git add .
-git commit -m "first commit"
-git remote add origin https://github.com/Mr-Ro-bo-to/lb_app_m2.git
-git push -u origin master
+allows user to upload data from excel sheet or type it's own

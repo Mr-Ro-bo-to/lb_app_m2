@@ -1,0 +1,27 @@
+Just some notes for me
+
+# just some 
+# install or update laer_beam libarry from same computer
+pip install -e /path/to/laser_beam
+pip install -e ../../laser_beam (relativ path to laser_beam project on local machine)
+pip uninstall laser_beam
+
+# install from github
+pip install git+https://github.com/Mr-Ro-bo-to/laser_beam.git 
+
+pip install streamlit
+
+# activate myenv
+myenv\Scripts\activate
+
+# run streamlit locally
+streamlit run your_script.py
+streamlit run streamlit_fit_m2.py
+streamlit run streamlit_fit_m2_test.py
+
+# github
+git init
+git add .
+git commit -m "first commit"
+git remote add origin https://github.com/Mr-Ro-bo-to/lb_app_m2.git
+git push -u origin master

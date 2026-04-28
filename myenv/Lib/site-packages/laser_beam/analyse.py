@@ -1,0 +1,343 @@
+import numpy as np
+import xarray as xr
+from scipy.optimize import curve_fit
+
+from laser_beam.utils import gauss_1D, hyperbola_1D, rescale_by_units
+from laser_beam.visualize import add_rectangle_overlay
+
+__all__ = [
+    'fit_beam_1D',
+    'print_fit_results',
+    'print_m2_result',
+    'fit_m2',
+]
+
+def fit_1D(
+        x,
+        y,
+        type='gauss',
+        start_params = None,
+): 
+    """
+    Docstring
+    """
+
+    # some validation:
+    x, y = np.asarray(x), np.asarray(y)
+    if x.ndim != 1 or y.ndim != 1 or x.size != y.size:
+        raise ValueError("x and y must be 1D arrays of the same length")
+
+    # gauss:
+    if type == 'gauss':
+        model = gauss_1D
+        param_names = ['amplitude', 'x0', 'width']
+        if start_params is None:
+            amplitude_start = np.max(y)
+            x0_start = np.sum(x * y) / np.sum(y)                                    # center of mass
+            width_start = np.sqrt(np.sum(y * (x - x0_start)**2) / np.sum(y))        # standard deviation
+            start_params = (amplitude_start, x0_start, width_start)
+        lower_bounds = (0, -np.inf, 0)          # amplitude must be positive, width must be positive, x0 can be anywhere
+        upper_bounds = (np.inf, np.inf, np.inf)
+
+    # hyperbola:
+    elif type == 'hyperbola':
+        model = hyperbola_1D
+        param_names = ['w0', 'x0', 'slope']
+        if start_params is None:
+            w0_start = np.min(y)
+            # choose x0_start as the x position of the minimum (w0) value
+            idx = np.argmin(y)
+            x0_start = x[idx]
+            slope = 1.0
+            start_params = (w0_start, x0_start, slope)
+        lower_bounds = (0, -np.inf, 0)          # w0 must be positive, slope must be positive, x0 can be anywhere
+        upper_bounds = (np.inf, np.inf, np.inf)
+    else:
+        raise ValueError(f"Unknown type '{type}'. Use 'gauss' or 'hyperbola'.")
+    
+    fit_para, _ = curve_fit(model,x, y, p0=start_params, bounds=(lower_bounds, upper_bounds))
+
+    fit_results = {name: val for name, val in zip(param_names, fit_para)} # python magic: create dict from two lists
+
+    return fit_results
+
+def fit_beam_1D(
+    beam: xr.DataArray,
+    type: str,
+    start_params = None,
+    n_points_fit = None,
+    label = None,
+    ):
+    """
+    Fit a 1D profile of the beam with a specified model.
+    """
+
+    # Ensure 1D
+    if beam.ndim != 1:
+        raise ValueError("DataArray must be 1D")
+    
+    # extract x and y data:
+    x_data = beam.coords[beam.dims[0]].values
+    y_data = beam.values
+    
+
+    # fit the data:
+    fit_results = fit_1D(
+        x=x_data,
+        y=y_data,
+        type=type,
+        start_params=start_params,
+    )
+
+    
+    # get units for x and y axes
+    units_x = beam.coords[beam.dims[0]].attrs.get('units', '')
+    units_y = beam.attrs.get('units', '')
+
+    # create x values for the fit curve:
+    if n_points_fit is None:
+        # same x axeis for fit as for data
+        x_fit = x_data
+    else:
+        # make x axis with N points
+        x_fit = np.linspace(x_data.min(), x_data.max(), n_points_fit)
+
+    # fitting
+    if type == 'gauss':
+        y_fit = gauss_1D(x_fit, **fit_results)
+        # amplitude has same units as y, x0 has same units as x, width has same units as x
+        fit_units = [units_y, units_x, units_x]
+    elif type == 'hyperbola':
+        y_fit = hyperbola_1D(x_fit, **fit_results)
+        # w0 has same units as y, x0 has same units as x, slope has units of dy/dx
+        fit_units = [units_y, units_x, f"{units_y}/{units_x}"] 
+    else:
+        raise ValueError(f"Unknown type '{type}'. Use 'gauss'.")
+    
+
+    dim = beam.dims[0]
+    
+    # create new DataArray for fit:
+    beam_fit = xr.DataArray(y_fit, coords={dim: x_fit}, dims=[dim])
+
+    # --- set attributes of fit beam
+    # label
+    if label is None:
+        #beam_fit.attrs['label'] = f"{type} fit"
+        beam_fit.attrs['label'] = f"{beam.attrs['label']}, fit, {type}"
+    else:
+        beam_fit.attrs['label'] = label
+
+    
+    # the physical quantiy of y axis (name and long_name)
+    beam_fit.name = beam.name # the physical quantiy of y axis
+    if 'long_name' in beam.attrs:
+        beam_fit.attrs['long_name'] = beam.attrs['long_name']
+    
+    # unit of y axis
+    beam_fit.attrs['units'] = beam.attrs.get('units', '')
+
+    # unit of x axis
+    coord_unit = beam.coords[dim].attrs.get('units', '')
+    beam_fit.coords[dim].attrs['units'] = coord_unit
+
+    # Store fit_results as a nested dict
+    fit_results_with_units = {
+        name: {'value': val, 'unit': unit}
+        for name, val, unit in zip(fit_results.keys(), fit_results.values(), fit_units)
+    }
+    beam_fit.attrs["fit_results"] = fit_results_with_units
+
+    return beam_fit
+
+def print_fit_results(beam_fit: xr.DataArray):
+    
+    print(f"Results: {beam_fit.attrs['label']}")
+    for param, value in beam_fit.attrs["fit_results"].items():
+        print(f"  {param}: {value['value']:.4f} {value['unit']}")
+
+# fit M2
+def fit_m2(
+    beam: xr.DataArray,
+    wavelength: float,
+    n_ok = 3,
+    n_point_fit: int = 100,
+    label: str = None,
+    ):
+
+    if label is None:
+        label = beam.attrs['label']
+
+    beam_fit = fit_beam_1D(beam,
+        type='hyperbola',
+        n_points_fit=n_point_fit,
+        label=label,
+        )
+    
+    fit_results = beam_fit.attrs['fit_results']
+
+    # get fit values
+    x0 = fit_results['x0']['value']
+    waist = fit_results['w0']['value']
+    divergence = fit_results['slope']['value']
+
+    # get units
+    x_unit = fit_results['x0']['unit']
+    waist_unit = fit_results['w0']['unit']
+    divergence_unit = fit_results['slope']['unit']
+    
+
+    # convert to SI
+    waist = rescale_by_units(waist, waist_unit, 'm')
+    divergence = rescale_by_units(divergence, divergence_unit, 'dimensionless')  # ex: 'μm/mm' -> scaling 1e-3 
+
+    # calucalte M2
+    m2 = waist * divergence * np.pi / wavelength
+
+    # calculate Railigh length considering M2
+    rayleigh_length = np.pi * waist**2 / (m2 * wavelength)
+
+    # convert back to x axis unit
+    rayleigh_length = rescale_by_units(rayleigh_length,'m',x_unit)
+
+    x_data = beam.coords[beam.dims[0]].values
+
+    # count data points within raileigh length
+    low, high = x0 - rayleigh_length, x0
+    n_waist_l = np.sum((x_data >= low) & (x_data <= high))
+    ok_waist_l = n_waist_l >= n_ok
+
+    low, high = x0, x0 + rayleigh_length
+    n_waist_r = np.sum((x_data > low) & (x_data <= high))
+    ok_waist_r = n_waist_r >= n_ok
+
+    low = x0 - 2* rayleigh_length
+    n_slope_l = np.sum(x_data <= low)
+    ok_slope_l = n_waist_l >= n_ok
+
+    high = x0 + 2* rayleigh_length
+    n_slope_r = np.sum(x_data >= high)
+    ok_slope_r = n_waist_l >= n_ok
+
+    # --- anotate beam_fit --- 
+    # (keep in mind that fit_results still points to beam_fit.attrs['fit_results'])
+
+    # add M2 result to label (plot in legend)
+    label = beam_fit.attrs['label']
+    #label = f"{label} fit, M2={m2:.3f}"
+    #label = f"{label}$_{{fit}}$, $M^2$={m2:.3f}"
+    label = f'{label}$_{{\\mathrm{{fit}}}}, M^2={m2:.3f}$'
+    beam_fit.attrs['label'] = label
+
+    fit_results['wavelength'] = {
+        'value': wavelength * 1e9,
+        'unit': 'nm'
+    }
+    
+    fit_results['rayleigh_length'] = {
+        'value': rayleigh_length,
+        'unit': x_unit,
+    }
+
+    fit_results['M2'] = m2
+
+    # set dictionary for data coverate fit_results['data_coverage']['wais_l']['n']/['ok']
+    fit_results['data_coverage'] = {}
+
+    fit_results['data_coverage'].update({
+        'waist_l': {'n': n_waist_l, 'ok': ok_waist_l},
+        'waist_r': {'n': n_waist_r, 'ok': ok_waist_r},
+        'slope_l': {'n': n_slope_l, 'ok': ok_slope_l},
+        'slope_r': {'n': n_slope_r, 'ok': ok_slope_r},
+    })
+
+    # add overlays
+    dim = beam.dims[0]
+
+    ranges = [
+        (x0 - rayleigh_length, x0 + rayleigh_length, 'waist'),
+        (np.min(x_data), x0 - 2* rayleigh_length, 'slope left'),
+        (x0 + 2* rayleigh_length, np.max(x_data),'slope right'),
+    ]
+    rect_style={
+        'edgecolor': 'none',
+        "facecolor": (0.5, 0.5, 0.5, 0.03),  # light grey with transparency
+        # "linewidth": 0.5,
+        # 'linestyle': "--",
+    }
+
+    label_style = {
+        "fontsize": 9,
+        "color": "black",
+        "ha": "left",
+        "va": "bottom",
+        "bbox": {
+            "facecolor": (1, 1, 1, 0.6),  # soft white, semi-transparent
+            "edgecolor": "none",
+            "pad": 1,
+        },
+    }
+
+    for start, stop, label in ranges:
+        overlay_dims = {
+            dim: {
+                "start": start,
+                "stop": stop,
+                "unit": x_unit,
+            }
+        }
+        add_rectangle_overlay(beam_fit, overlay_dims, label, rect_style= rect_style, label_style=label_style)
+
+    return beam_fit
+
+# print m2 fit results to schreen
+def print_m2_result(da: xr.DataArray):
+    r = da.attrs["fit_results"]
+    
+    print(f"Fit Results: {da.label}")
+    print(f"  wavelength      : {r['wavelength']['value']:.0f} {r['wavelength']['unit']}\n")
+    
+    print("fit parameter")
+    print(f"  w0              : {r['w0']['value']:.3f} {r['w0']['unit']}")
+    print(f"  x0              : {r['x0']['value']:.3f} {r['x0']['unit']}")
+    print(f"  slope           : {r['slope']['value']:.3f} {r['slope']['unit']}")
+    print(f"  rayleigh_length : {r['rayleigh_length']['value']:.3f} {r['rayleigh_length']['unit']}")
+    print(f"  M2              : {r['M2']:.3f}")
+    
+    dc = r["data_coverage"]
+    print("\n  data_coverage:")
+    print(f"    waist_l : n={dc['waist_l']['n']}, ok={dc['waist_l']['ok']}")
+    print(f"    waist_r : n={dc['waist_r']['n']}, ok={dc['waist_r']['ok']}")
+    print(f"    slope_l : n={dc['slope_l']['n']}, ok={dc['slope_l']['ok']}")
+    print(f"    slope_r : n={dc['slope_r']['n']}, ok={dc['slope_r']['ok']}")
+
+
+# Example usage:
+if __name__ == "__main__":
+    import laser_beam as lb
+    import matplotlib.pyplot as plt
+    
+    beam = lb.create_beam_xy(
+        type = "Gauss",
+        func_params={
+            'width_x': 40,
+            'width_y': 40,
+        },
+        axis_unit='mm',
+        axis_x_N=100,
+        axis_y_N=100,
+    )
+
+    beam_red = lb.cross_section(beam,
+        y=(-1,1,'mm'),
+        label = 'Lineout',
+    )
+
+    beam_fit = fit_beam_1D(beam_red, type='gauss')
+    print_fit_results(beam_fit)
+
+    #beam_fit.plot()
+    lb.plot_1D(beam_fit)
+
+    plt.tight_layout()
+    plt.show()
